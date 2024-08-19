@@ -2,7 +2,7 @@ import type { SVGProps } from 'react';
 
 const HatLogo = (props: SVGProps<SVGSVGElement>) => {
   return (
-    <svg xmlns="http://www.w3.org/2000/svg" width={120} height={86} {...props}>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 86" {...props}>
       <path
         fillOpacity={0.5}
         d="M92.525 70.2V9.561a3.99 3.99 0 0 0-2.756-3.8C85.38 4.333 75.664 1.931 60 1.931s-25.38 2.4-29.769 3.828a3.99 3.99 0 0 0-2.757 3.8V70.2S37.722 75.055 60 75.055 92.525 70.2 92.525 70.2"
