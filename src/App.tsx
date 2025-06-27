@@ -1,194 +1,246 @@
-import { useState, useRef, useEffect } from 'react';
+import { useReducer, useRef, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Slider } from '@/components/ui/slider';
 import { Card, CardContent } from '@/components/ui/card';
-import { Copy, Check, Palette, Sun, Moon } from 'lucide-react';
+import { Copy, Check, Palette } from 'lucide-react';
 import HatLogo from './assets/HATLogo';
 import { HexColorPicker } from 'react-colorful';
 import { useGSAP } from '@gsap/react';
 import gsap from 'gsap';
 import { ThemeProvider } from './components/theme-provider';
-import { useTheme } from './components/use-theme';
+import {
+  isValidHex,
+  getHexAlpha,
+  isColorSimilarToBg,
+  getAlphaHex,
+} from './utils/color';
+import ModeToggle from './components/inner-components/ModeToggle';
+import { useLocalStorage } from './hooks/useLocalStorage';
 import {
   DropdownMenu,
   DropdownMenuContent,
-  DropdownMenuItem,
   DropdownMenuTrigger,
-} from './components/ui/dropdown-menu';
+} from '@/components/ui/dropdown-menu';
 
 gsap.registerPlugin(useGSAP);
 
-function ModeToggle() {
-  const { setTheme } = useTheme();
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button
-          variant="outline"
-          size="icon"
-          className="fixed top-4 right-4 z-50"
-        >
-          <Sun className="h-[1.2rem] w-[1.2rem] scale-100 rotate-0 transition-all dark:scale-0 dark:-rotate-90" />
-          <Moon className="absolute h-[1.2rem] w-[1.2rem] scale-0 rotate-90 transition-all dark:scale-100 dark:rotate-0" />
-          <span className="sr-only">Toggle theme</span>
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end">
-        <DropdownMenuItem onClick={() => setTheme('light')}>
-          Light
-        </DropdownMenuItem>
-        <DropdownMenuItem onClick={() => setTheme('dark')}>
-          Dark
-        </DropdownMenuItem>
-        <DropdownMenuItem onClick={() => setTheme('system')}>
-          System
-        </DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
-  );
+type State = {
+  hexColor: string;
+  opacity: number;
+  background: 'white' | 'black';
+  copied: boolean;
+  logoHovered: boolean;
+  isValid: boolean;
+};
+
+type Action =
+  | { type: 'SET_HEX_COLOR'; value: string }
+  | { type: 'SET_OPACITY'; value: number }
+  | { type: 'SET_BACKGROUND'; value: 'white' | 'black' }
+  | { type: 'SET_COPIED'; value: boolean }
+  | { type: 'SET_LOGO_HOVERED'; value: boolean };
+
+const initialState: State = {
+  hexColor: '',
+  opacity: 80,
+  background: 'white',
+  copied: false,
+  logoHovered: false,
+  isValid: false,
+};
+
+const LAST_HEX_KEY = 'last-hex-color';
+
+function reducer(state: State, action: Action): State {
+  switch (action.type) {
+    case 'SET_HEX_COLOR': {
+      const hexColor = action.value.startsWith('#')
+        ? action.value.toUpperCase()
+        : `#${action.value.toUpperCase()}`;
+      return {
+        ...state,
+        hexColor,
+        isValid: isValidHex(hexColor),
+      };
+    }
+    case 'SET_OPACITY':
+      return { ...state, opacity: action.value };
+    case 'SET_BACKGROUND':
+      return { ...state, background: action.value };
+    case 'SET_COPIED':
+      return { ...state, copied: action.value };
+    case 'SET_LOGO_HOVERED':
+      return { ...state, logoHovered: action.value };
+    default:
+      return state;
+  }
 }
 
 export default function App() {
-  const [hexColor, setHexColor] = useState('');
-  const [opacity, setOpacity] = useState([80]);
-  const [background, setBackground] = useState<'white' | 'black'>('white');
-  const [copied, setCopied] = useState(false);
-  const [pickerOpen, setPickerOpen] = useState(false);
-  const pickerRef = useRef<HTMLDivElement>(null);
-  const cardRef = useRef<HTMLDivElement>(null);
-  const logoRef = useRef<HTMLDivElement>(null);
-  const textRef = useRef<HTMLDivElement>(null);
-
-  const getAlphaHex = (opacityPercent: number) => {
-    const alpha = Math.round((opacityPercent / 100) * 255);
-    return alpha.toString(16).padStart(2, '0').toUpperCase();
-  };
-
-  const getHexAlpha = () => {
-    const cleanHex = hexColor.replace('#', '');
-    const alphaHex = getAlphaHex(opacity[0]);
-    return `#${cleanHex}${alphaHex}`;
-  };
+  const [state, dispatch] = useReducer(reducer, initialState);
+  const hatLogoRef = useRef<SVGSVGElement | null>(null);
+  const [lastHex, setLastHex] = useLocalStorage<string>(LAST_HEX_KEY, '');
+  const validHexRef = useRef<HTMLSpanElement>(null);
+  const invalidHexRef = useRef<HTMLSpanElement>(null);
 
   const copyToClipboard = async () => {
     try {
-      await navigator.clipboard.writeText(getHexAlpha());
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+      await navigator.clipboard.writeText(
+        getHexAlpha(state.hexColor, state.opacity)
+      );
+      dispatch({ type: 'SET_COPIED', value: true });
+      setTimeout(() => dispatch({ type: 'SET_COPIED', value: false }), 2000);
     } catch (err) {
       console.error('Failed to copy:', err);
     }
   };
 
-  const isValidHex = (hex: string) => {
-    return /^#[0-9A-F]{6}$/i.test(hex);
-  };
-
-  const handleHexChange = (value: string) => {
-    if (value.startsWith('#')) {
-      setHexColor(value.toUpperCase());
-    } else {
-      setHexColor(`#${value.toUpperCase()}`);
+  useEffect(() => {
+    if (state.isValid) {
+      setLastHex(state.hexColor);
     }
-  };
-
-  const handlePickerChange = (color: string) => {
-    setHexColor(color.toUpperCase());
-  };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.hexColor, state.isValid]);
 
   useEffect(() => {
-    if (!pickerOpen) return;
-    function handleClick(e: MouseEvent) {
-      if (pickerRef.current && !pickerRef.current.contains(e.target as Node)) {
-        setPickerOpen(false);
-      }
+    if (lastHex && !state.hexColor) {
+      dispatch({ type: 'SET_HEX_COLOR', value: lastHex });
     }
-    document.addEventListener('mousedown', handleClick);
-    return () => document.removeEventListener('mousedown', handleClick);
-  }, [pickerOpen]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lastHex]);
 
   useGSAP(() => {
-    gsap.fromTo(
-      cardRef.current,
-      { opacity: 0, y: 200 },
-      { opacity: 1, y: 0, duration: 0.5, ease: 'circ.out' }
-    );
-    gsap.fromTo(
-      logoRef.current,
-      { opacity: 0, y: -60 },
-      { opacity: 1, y: 0, duration: 0.5, ease: 'circ.out', delay: 0.15 }
-    );
-    gsap.fromTo(
-      textRef.current,
-      { opacity: 0, y: 40 },
-      { opacity: 1, y: 0, duration: 0.5, ease: 'circ.out', delay: 0.4 }
-    );
-  });
+    if (hatLogoRef.current) {
+      gsap.set(hatLogoRef.current, { opacity: 0, y: -50 });
+      gsap.to(hatLogoRef.current, {
+        opacity: 1,
+        y: 0,
+        duration: 0.2,
+        delay: 0.2,
+      });
+    }
+  }, []);
+
+  useGSAP(() => {
+    if (validHexRef.current && invalidHexRef.current) {
+      if (state.isValid) {
+        gsap.to(validHexRef.current, {
+          opacity: 1,
+          y: 0,
+          duration: 0.2,
+          ease: 'circ.out',
+          pointerEvents: 'auto',
+        });
+        gsap.to(invalidHexRef.current, {
+          opacity: 0,
+          y: 10,
+          duration: 0.2,
+          ease: 'circ.out',
+          pointerEvents: 'none',
+        });
+      } else {
+        gsap.to(validHexRef.current, {
+          opacity: 0,
+          y: -10,
+          duration: 0.2,
+          ease: 'circ.out',
+          pointerEvents: 'none',
+        });
+        gsap.to(invalidHexRef.current, {
+          opacity: 1,
+          y: 0,
+          duration: 0.2,
+          ease: 'circ.out',
+          pointerEvents: 'auto',
+        });
+      }
+    }
+  }, [state.isValid]);
 
   return (
     <ThemeProvider defaultTheme="system" storageKey="vite-ui-theme">
       <ModeToggle />
-      <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:bg-gradient-to-br dark:from-gray-900 dark:to-gray-950 p-4">
+      <div className="min-h-screen bg-background dark:bg-background p-4">
         <div className="max-w-2xl mx-auto py-8">
           <div className="text-center mb-8">
-            <div
-              ref={logoRef}
-              className={
-                'flex justify-center mb-2 text-gray-900 dark:text-gray-100'
-              }
-            >
-              <HatLogo className="h-16 w-auto" />
+            <div className="flex flex-col items-center mb-2 relative">
+              <HatLogo
+                ref={hatLogoRef}
+                className="h-16 w-auto"
+                color={
+                  state.isValid &&
+                  state.logoHovered &&
+                  !isColorSimilarToBg(state.hexColor)
+                    ? state.hexColor
+                    : undefined
+                }
+                onMouseEnter={() =>
+                  dispatch({ type: 'SET_LOGO_HOVERED', value: true })
+                }
+                onMouseLeave={() =>
+                  dispatch({ type: 'SET_LOGO_HOVERED', value: false })
+                }
+                style={{ willChange: 'transform' }}
+              />
             </div>
           </div>
-          <Card ref={cardRef} className="mb-6 shadow-lg border-0">
+          <Card className="mb-6">
             <CardContent className="p-8">
               <div className="mb-6">
-                <label className="block text-sm font-semibold text-gray-700 dark:text-gray-200 mb-2">
+                <label className="block text-sm font-semibold mb-2">
                   Hex Color Code
                 </label>
                 <div className="flex items-center gap-2 relative">
                   <Input
-                    type="text"
-                    value={hexColor}
-                    onChange={(e) => handleHexChange(e.target.value)}
+                    value={state.hexColor}
+                    onChange={(e) =>
+                      dispatch({ type: 'SET_HEX_COLOR', value: e.target.value })
+                    }
                     placeholder="Hex color (e.g. #FF5733)"
-                    className="text-lg font-mono text-center border-2 focus:border-blue-500"
+                    className="text-lg font-mono text-center focus:border-blue-500"
                     maxLength={7}
                     hexMask
                   />
-                  <Button
-                    type="button"
-                    size="icon"
-                    variant="ghost"
-                    className="ml-1"
-                    title="Pick a color"
-                    tabIndex={0}
-                    onClick={() => setPickerOpen((v) => !v)}
-                  >
-                    <Palette className="w-5 h-5" />
-                  </Button>
-                  {pickerOpen && (
-                    <div
-                      ref={pickerRef}
-                      className="absolute z-50 top-12 right-0 bg-white dark:bg-gray-800 p-4 rounded-lg shadow-lg border"
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button
+                        type="button"
+                        size="icon"
+                        variant="ghost"
+                        className="ml-1"
+                        title="Pick a color"
+                        tabIndex={0}
+                      >
+                        <Palette className="w-5 h-5" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent
+                      align="end"
+                      className="p-0 bg-card border-1 rounded-lg shadow-lg"
                       style={{ minWidth: 220 }}
                     >
-                      <HexColorPicker
-                        color={hexColor}
-                        onChange={handlePickerChange}
-                      />
-                    </div>
-                  )}
+                      <div className="p-4">
+                        <HexColorPicker
+                          color={state.hexColor}
+                          onChange={(color) =>
+                            dispatch({ type: 'SET_HEX_COLOR', value: color })
+                          }
+                        />
+                      </div>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                 </div>
               </div>
               <div className="mb-8">
-                <label className="block text-sm font-semibold text-gray-700 dark:text-gray-200 mb-3">
-                  Opacity: {opacity[0]}%
+                <label className="block text-sm font-semibold mb-3">
+                  Opacity: {state.opacity}%
                 </label>
                 <Slider
-                  value={opacity}
-                  onValueChange={setOpacity}
+                  value={[state.opacity]}
+                  onValueChange={([value]) =>
+                    dispatch({ type: 'SET_OPACITY', value })
+                  }
                   max={100}
                   min={0}
                   step={1}
@@ -196,86 +248,135 @@ export default function App() {
                 />
               </div>
               <div className="mb-6">
-                <label className="block text-sm font-semibold text-gray-700 dark:text-gray-200 mb-3">
+                <label className="block text-sm font-semibold mb-3">
                   Preview
                 </label>
                 <div className="flex gap-2 mb-4">
                   <Button
-                    variant={background === 'white' ? 'default' : 'outline'}
+                    variant={
+                      state.background === 'white' ? 'default' : 'outline'
+                    }
                     size="sm"
-                    onClick={() => setBackground('white')}
-                    className="text-xs"
+                    onClick={() =>
+                      dispatch({ type: 'SET_BACKGROUND', value: 'white' })
+                    }
+                    className="text-xs  border-1"
                   >
                     White Background
                   </Button>
                   <Button
-                    variant={background === 'black' ? 'default' : 'outline'}
+                    variant={
+                      state.background === 'black' ? 'default' : 'outline'
+                    }
                     size="sm"
-                    onClick={() => setBackground('black')}
-                    className="text-xs"
+                    onClick={() =>
+                      dispatch({ type: 'SET_BACKGROUND', value: 'black' })
+                    }
+                    className="text-xs border-1"
                   >
                     Black Background
                   </Button>
                 </div>
                 <div
-                  className={`w-full h-32 rounded-lg border-2 border-gray-200 relative overflow-hidden ${
-                    background === 'white' ? 'bg-white' : 'bg-black'
+                  className={`w-full h-32 border-1 [border-color:var(--border)] relative overflow-hidden ${
+                    state.background === 'white' ? 'bg-white' : 'bg-black'
                   }`}
                 >
-                  {isValidHex(hexColor) && (
+                  {state.isValid && (
                     <div
                       className="absolute inset-0"
                       style={{
-                        backgroundColor: hexColor,
-                        opacity: opacity[0] / 100,
+                        backgroundColor: state.hexColor,
+                        opacity: state.opacity / 100,
                       }}
                     />
                   )}
-                  {!isValidHex(hexColor) && (
-                    <div className="absolute inset-0 flex items-center justify-center text-gray-400">
-                      Invalid hex color
+                  {!state.isValid && (
+                    <div className="absolute inset-0 flex items-center justify-center text-xs text-gray-400">
+                      Invalid hex code
                     </div>
                   )}
                 </div>
               </div>
               <div className="space-y-4">
-                <label className="block text-sm font-semibold text-gray-700 dark:text-gray-200">
+                <label className="block text-sm font-semibold">
                   Hex + Alpha Result
                 </label>
-                <div className="flex gap-3">
-                  <Input
-                    type="text"
-                    value={isValidHex(hexColor) ? getHexAlpha() : 'Invalid hex'}
-                    readOnly
-                    className="text-lg font-mono text-center bg-gray-50 border-2"
-                  />
-                  <Button
-                    onClick={copyToClipboard}
-                    disabled={!isValidHex(hexColor)}
-                    className="px-6 flex items-center gap-2"
-                  >
-                    {copied ? (
-                      <>
-                        <Check className="w-4 h-4" />
-                        Copied!
-                      </>
-                    ) : (
-                      <>
-                        <Copy className="w-4 h-4" />
-                        Copy
-                      </>
-                    )}
-                  </Button>
+                <div className="border-1 rounded-lg p-4">
+                  <div className="flex items-center justify-between">
+                    <div className="flex-1">
+                      <div style={{ position: 'relative', minHeight: 32 }}>
+                        <span
+                          ref={validHexRef}
+                          className="text-2xl font-mono font-bold mb-1 block"
+                          style={{
+                            position: 'absolute',
+                            left: 0,
+                            right: 0,
+                            top: 0,
+                            opacity: state.isValid ? 1 : 0,
+                          }}
+                        >
+                          {state.hexColor}
+                          <span style={{ opacity: 0.5 }}>
+                            {getAlphaHex(state.opacity)}
+                          </span>
+                        </span>
+                        <span
+                          ref={invalidHexRef}
+                          className="text-xs text-gray-400 block"
+                          style={{
+                            position: 'absolute',
+                            left: 0,
+                            right: 0,
+                            top: 0,
+                            opacity: state.isValid ? 0 : 1,
+                          }}
+                        >
+                          Invalid hex code
+                        </span>
+                      </div>
+                    </div>
+                    <Button
+                      onClick={copyToClipboard}
+                      disabled={!state.isValid}
+                      size="lg"
+                      className="ml-4 px-6 flex items-center gap-2"
+                    >
+                      {state.copied ? (
+                        <>
+                          <Check className="w-5 h-5" />
+                          Copied!
+                        </>
+                      ) : (
+                        <>
+                          <Copy className="w-5 h-5" />
+                          Copy
+                        </>
+                      )}
+                    </Button>
+                  </div>
                 </div>
               </div>
             </CardContent>
           </Card>
-          <div
-            ref={textRef}
-            className="text-center text-sm text-gray-600 max-w-lg mx-auto leading-relaxed"
-          >
-            HexAlphaTool (HAT) is an online utility tool that allows users to
-            add alpha transparency to hex color codes on the fly.
+          <div className="text-center text-sm max-w-lg mx-auto leading-relaxed">
+            <span style={{ opacity: 0.7 }}>
+              HexAlphaTool (HAT) is an online utility tool that allows users to
+              add alpha transparency to hex color codes on the fly.
+            </span>
+            <div className="mt-4 text-xs text-center">
+              <span className="opacity-50 ">made by </span>
+              <a
+                href="https://www.ricardomorais.dev"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                <span className="underline underline-offset-2 opacity-50 hover:opacity-100">
+                  www.ricardomorais.dev
+                </span>
+              </a>
+            </div>
           </div>
         </div>
       </div>
