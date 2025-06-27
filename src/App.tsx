@@ -4,7 +4,7 @@ import { Input } from '@/components/ui/input';
 import { Slider } from '@/components/ui/slider';
 import { Card, CardContent } from '@/components/ui/card';
 import { Copy, Check, Palette } from 'lucide-react';
-import HatLogo from './assets/HATLogo';
+import HatLogo from './assets/HatdLogo';
 import { HexColorPicker } from 'react-colorful';
 import { useGSAP } from '@gsap/react';
 import gsap from 'gsap';
